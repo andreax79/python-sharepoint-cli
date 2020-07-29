@@ -1,0 +1,2 @@
+shareplum
+encrypted_cookiejar
