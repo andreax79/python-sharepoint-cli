@@ -11,7 +11,7 @@ import datetime
 import filecmp
 from io import StringIO
 from sharepointcli import main, __version__
-from sharepointcli.cli import format_help
+from sharepointcli.cli import format_help, ArgumentParser
 from collections import namedtuple
 
 Result = namedtuple('Result', 'exit_code stdout stderr')
@@ -49,6 +49,21 @@ class Testing(unittest.TestCase):
 
 
 class LocalTesting(Testing):
+
+    def test_argument_parser(self):
+        parser = ArgumentParser(commands=['aaa','bbb','ccc'], prog='test')
+        options = parser.parse_args(args=['-v', '-a', 'aaa', '1', '2', '-b'])
+        self.assertEqual(options.verbose, True)
+        self.assertEqual(options.command, 'aaa')
+        self.assertEqual(options.username, None)
+        self.assertEqual(options.args, ['1','2'])
+        self.assertEqual(options.argv, ['-a','-b'])
+        parser = ArgumentParser(commands=['aaa','bbb','ccc'], prog='test')
+        options = parser.parse_args(args=['aaa', '-v', '-a', '-b', '1', '2'])
+        self.assertEqual(options.verbose, True)
+        self.assertEqual(options.command, 'aaa')
+        self.assertEqual(options.args, ['1','2'])
+        self.assertEqual(options.argv, ['-a','-b'])
 
     def test_version(self):
         self._exec('version',

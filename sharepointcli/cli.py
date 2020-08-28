@@ -156,9 +156,24 @@ def format_help(md: str) -> str:
 
 class ArgumentParser(argparse.ArgumentParser):
 
-    def __init__(self, stderr: IO[str] = sys.stderr, **kargs) -> None:
-        super().__init__(**kargs)
+    def __init__(self,
+                 commands: List[str],
+                 prog: Optional[str] = None,
+                 stderr: IO[str] = sys.stderr,
+                 **kargs) -> None:
+        super().__init__(add_help=False, **kargs)
         self.stderr = stderr
+        self.add_argument('command',
+                          choices=commands)
+        self.add_argument('args', nargs='*')
+        self.add_argument('-u', '--username',
+                          dest='username')
+        self.add_argument('-p', '--password',
+                          dest='password')
+        self.add_argument('-v', '--verbose',
+                          action='store_true',
+                          dest='verbose')
+        self.usage = USAGE.format(prog=self.prog)
 
     def exit(self, status: int = 0, message: Optional[str] = None) -> NoReturn:
         if message:
@@ -166,8 +181,13 @@ class ArgumentParser(argparse.ArgumentParser):
         raise ArgumentParserError()
 
     def parse_args(self, args=None, namespace=None):
-        args, argv = self.parse_known_args(args, namespace)
-        args.argv = argv
+        args, remaining_args = self.parse_known_args(args, namespace)
+        args.argv = []
+        for arg in remaining_args:
+            if arg.startswith('-'):
+                args.argv.append(arg)
+            else:
+                args.args.append(arg)
         return args
 
 
@@ -183,18 +203,7 @@ class SPOCli(object):
         self.commands = sorted([x[3:] for x in dir(self) if x.startswith('do_')])
 
     def cmd(self, args: Optional[List[str]]) -> int:
-        parser = ArgumentParser(prog=self.prog, add_help=False)
-        parser.add_argument('command',
-                            choices=self.commands)
-        parser.add_argument('args', nargs='*')
-        parser.add_argument('-u', '--username',
-                            dest='username')
-        parser.add_argument('-p', '--password',
-                            dest='password')
-        parser.add_argument('-v', '--verbose',
-                            action='store_true',
-                            dest='verbose')
-        parser.usage = USAGE.format(prog=self.prog)
+        parser = ArgumentParser(commands=self.commands, prog=self.prog)
         options = None
         try:
             options = parser.parse_args(args=args)
