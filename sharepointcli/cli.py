@@ -253,18 +253,21 @@ $ spo configure [domain]
         if set(options.argv):
             raise ArgumentException('Unrecognized arguments')
         domain: str = args[0] if len(args) > 0 else ''
-        prompt: str = 'SharePoint domain (e.g. example.sharepoint.com){}: ' \
-                      .format((' [' + domain + ']') if domain else '')
-        domain = input(prompt).strip() or domain
+        if not domain:
+            prompt: str = 'SharePoint domain (e.g. example.sharepoint.com){}: ' \
+                          .format((' [' + domain + ']') if domain else '')
+            domain = input(prompt).strip()
         try:
             username, password = load_credentials('https://' + domain, options.username, options.password)
         except Exception:
             username = options.username
             password = options.password
-        prompt = 'Username{}: '.format((' [' + username + ']') if username else '')
-        username  = input(prompt).strip() or username
-        prompt = 'Password{}: '.format((' [' + '*' * len(password) + ']') if password else '')
-        password  = getpass(prompt).strip() or password
+        if not options.username:
+            prompt = 'Username{}: '.format((' [' + username + ']') if username else '')
+            username  = input(prompt).strip() or username
+        if not options.password:
+            prompt = 'Password{}: '.format((' [' + '*' * len(password) + ']') if password else '')
+            password  = getpass(prompt).strip() or password
         if not domain or not username or not password:
             return EXIT_FAILURE
         # Check credentials
