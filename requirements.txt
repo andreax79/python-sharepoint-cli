@@ -1,2 +1,4 @@
 shareplum
 encrypted_cookiejar
+requests
+requests_ntlm

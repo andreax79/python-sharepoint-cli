@@ -10,6 +10,7 @@ from lxml import etree
 from io import StringIO
 from typing import Any
 import requests
+from requests_ntlm import HttpNtlmAuth
 from encrypted_cookiejar import EncryptedCookieJar
 
 __all__ = [
@@ -88,11 +89,12 @@ class SSOAuth(object):
 
     def _login(self) -> None:
         # Get first page
+        self._debug('get {}'.format(self.share_point_site))
         response = self._session.get(self.share_point_site)
         original_request = re.findall(b'"sCtx":"([^"]*)"', response.content)[0].decode('utf-8')
-
         # Get identity platform login page
         login_url = 'https://login.microsoftonline.com/common/GetCredentialType?mkt={lang}'.format(lang=LANG)
+        self._debug('post {}'.format(login_url))
         login_response = self._session.post(login_url, json={
             "username": self.username,
             "isOtherIdpSupported": True,
@@ -110,16 +112,24 @@ class SSOAuth(object):
             "flowToken": self._session.cookies['buid'],
             "isAccessPassSupported": True
         })
-
         # Post username/password into the user's teneant sign-in page
         try:
             federated_login_url = login_response.json()['Credentials']['FederationRedirectUrl']
+            self._debug('get {}'.format(federated_login_url))
             federated_login_response = self._session.get(federated_login_url)
+            if federated_login_response.status_code == 401:
+                if 'NTLM' in federated_login_response.headers.get('WWW-Authenticate', ''):
+                    auth = HttpNtlmAuth(self.username, self.password)
+                    federated_login_response = self._session.get(federated_login_url, auth=auth)
+            if federated_login_response.status_code != 200:
+                raise LoginException('Federated login error (get)')
             federated_login_response = self._session.post(federated_login_url, data={
                 "UserName": self.username,
                 "Password": self.password,
                 "AuthMethod": "FormsAuthentication",
             })
+            if federated_login_response.status_code != 200:
+                raise LoginException('Federated login error (post)')
         except KeyError:
             raise LoginException('Teneant not found')
 
@@ -129,6 +139,7 @@ class SSOAuth(object):
         login_data = dict((x.get('name'), x.get('value')) for x in tree.xpath("//input") if x.get('name'))
         if not login_microsoftonline_url or not login_microsoftonline_url.startswith('http') or not login_data:
             raise LoginException('Invalid login')
+        self._debug('post {}'.format(login_microsoftonline_url))
         login_microsoftonline_response = self._session.post(login_microsoftonline_url, data=login_data)
         assert(login_microsoftonline_response)
 
@@ -137,6 +148,7 @@ class SSOAuth(object):
         tree = self._parse_html(site_response.content)
         url2 = tree.xpath('//form')[0].get('action')
         data2 = dict((x.get('name'), x.get('value')) for x in tree.xpath("//input") if x.get('name'))
+        self._debug('post {}'.format(url2))
         site_response2 = self._session.post(url2, data=data2)
         assert(site_response2)
         # cookies: FedAuth, rtFa
