@@ -37,6 +37,10 @@ You can use the following command line options to override the default configura
 
   Specifies the password associated with the username.
 
+* **--timeout <string>**
+
+  Specifies the timeout in seconds.
+
 #### Environment variables
 
 Environment variables provide another way to specify credentials, and can be
@@ -58,6 +62,10 @@ The CLI supports the following environment variables:
 * **SPO_PASSWORD**
 
   Specifies the password associated with the username.
+
+* **SPO_TIMEOUT**
+
+  Specifies the timeout in seconds.
 
 #### Credentials file
 

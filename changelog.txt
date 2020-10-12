@@ -8,3 +8,28 @@
 
 - initial version
 
+## 1.1.0
+
+2020-09-29
+
+### Added
+
+- configure
+
+### Fix
+
+- ntlm auth
+- arguments parser fix
+
+## 1.2.0
+
+2020-10-12
+
+### Added
+
+- configurable timeout
+
+### Fix
+
+- read option from environment variables
+

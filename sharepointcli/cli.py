@@ -27,15 +27,17 @@ __all__ = [
 ]
 
 ENV_CREDENTIALS = 'SPO_CREDENTIALS_FILE'
-ENV_USERNAME = 'SPO_CREDENTIALS'
-ENV_PASSWORD = 'SPO_CREDENTIALS'
+ENV_USERNAME = 'SPO_USERNAME'
+ENV_PASSWORD = 'SPO_PASSWORD'
+ENV_TIMEOUT = 'SPO_TIMEOUT'
 CREDENTIALS = '~/.spo/credentials'
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_PARSER_ERROR = 2
 RE_SHAREPOINT_COM = re.compile('^https://[^\\.]+.sharepoint.com/.*')
+TIMEOUT = 60
 USAGE = """\
-{prog} [-u USERNAME] [-p PASSWORD] [-v] <command> [parameters]
+{prog} [-u USERNAME] [-p PASSWORD] [-t TIMEOUT] [-v] <command> [parameters]
 
 To see help text, you can run:
 
@@ -73,12 +75,12 @@ def is_office365_sharepoint(url: str) -> bool:
 def load_credentials(site_url: str,
                      username: Optional[str] = None,
                      password: Optional[str] = None) -> Tuple[str, str]:
-    username = username or os.environ.get('ENV_USERNAME')
-    password = password or os.environ.get('ENV_PASSWORD')
+    username = username or os.environ.get(ENV_USERNAME)
+    password = password or os.environ.get(ENV_PASSWORD)
     if username and password:
         return (username, password)
     config = configparser.ConfigParser()
-    config.read(os.path.expanduser(os.environ.get('ENV_CREDENTIALS') or CREDENTIALS))
+    config.read(os.path.expanduser(os.environ.get(ENV_CREDENTIALS) or CREDENTIALS))
     domain = site_url.split('/')[2]
     section = domain
     if section not in config:
@@ -96,21 +98,27 @@ def get_sharepoint_site(site_url: str,
                         username: Optional[str] = None,
                         password: Optional[str] = None,
                         verbose: bool = False,
+                        timeout: Optional[int] = None,
                         version: Version = None) -> Site:
     if version is None:
         version = Version.v365 if is_office365_sharepoint(site_url) else Version.v2013
     username, password = load_credentials(site_url, username, password)
+    if timeout is None:
+        try:
+            timeout = int(os.environ[ENV_TIMEOUT])
+        except Exception:
+            timeout = TIMEOUT
     if is_office365_sharepoint(site_url):
         sso_auth = SSOAuth(site_url, username=username, password=password, verbose=verbose)
         try:
             authcookie = sso_auth.get_cookies()
-            site = Site(site_url, version=version, authcookie=authcookie)
+            site = Site(site_url, version=version, authcookie=authcookie, timeout=timeout)
         except ShareplumRequestError:
             authcookie = sso_auth.get_cookies(force_login=True)
-            site = Site(site_url, version=version, authcookie=authcookie)
+            site = Site(site_url, version=version, authcookie=authcookie, timeout=timeout)
     else:
         auth = HttpNtlmAuth(username, password)
-        site = Site(site_url, version=version, auth=auth)
+        site = Site(site_url, version=version, auth=auth, timeout=timeout)
         # site._session.headers['Accept'] = 'application/json;odata=verbose'
     try:
         yield site
@@ -173,6 +181,9 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument('-v', '--verbose',
                           action='store_true',
                           dest='verbose')
+        self.add_argument('-t', '--timeout',
+                          dest='timeout',
+                          type=float)
         self.usage = USAGE.format(prog=self.prog)
 
     def exit(self, status: int = 0, message: Optional[str] = None) -> NoReturn:
@@ -207,6 +218,8 @@ class SPOCli(object):
         options = None
         try:
             options = parser.parse_args(args=args)
+            if options.verbose:
+                print(options, file=self.stderr)
             method = getattr(self, 'do_' + options.command)
             return method(options.args, options)
         except ArgumentParserError:
@@ -339,7 +352,11 @@ download: https://example.sharepoint.com/sites/example/Shared documents/test.txt
             elif os.path.isdir(target):
                 target = os.path.join(target, filename)
             site_url, path = split_url(url)
-            with get_sharepoint_site(site_url, options.username, options.password, options.verbose) as site:
+            with get_sharepoint_site(site_url,
+                                     options.username,
+                                     options.password,
+                                     options.verbose,
+                                     options.timeout) as site:
                 folder = get_folder(site, path)
                 if filename not in [x['Name'] for x in folder.files]:
                     raise NotFoundError('{} does not exist'.format(os.path.join(folder.folder_name, filename)))
@@ -357,8 +374,13 @@ download: https://example.sharepoint.com/sites/example/Shared documents/test.txt
                 filename = os.path.basename(target)
                 url = os.path.dirname(target)
             site_url, path = split_url(url)
-            with get_sharepoint_site(site_url, options.username, options.password, options.verbose) as site:
+            with get_sharepoint_site(site_url,
+                                     options.username,
+                                     options.password,
+                                     options.verbose,
+                                     options.timeout) as site:
                 folder = get_folder(site, path)
+                folder.timeout = site.timeout
                 with open(source, 'rb') as f:
                     content = f.read()
                 print('upload: {} to {}'.format(source, target), file=self.stderr)
@@ -433,7 +455,11 @@ $ spo ls 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
         url: str = args[0]
         site_url, path = split_url(url)
         match = False
-        with get_sharepoint_site(site_url, options.username, options.password, options.verbose) as site:
+        with get_sharepoint_site(site_url,
+                                 options.username,
+                                 options.password,
+                                 options.verbose,
+                                 options.timeout) as site:
             try:
                 folder = get_folder(site, path)
                 filename = None
@@ -475,7 +501,11 @@ $ spo mkdir <SharePointUrl>
             raise ArgumentException()
         url: str = args[0].rstrip('/')
         site_url, path = split_url(url)
-        with get_sharepoint_site(site_url, options.username, options.password, options.verbose) as site:
+        with get_sharepoint_site(site_url,
+                                 options.username,
+                                 options.password,
+                                 options.verbose,
+                                 options.timeout) as site:
             parent_folder = get_folder(site, os.path.dirname(path))
             name = os.path.basename(path)
             if name in parent_folder.folders:
@@ -512,7 +542,11 @@ $ spo rm 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
         url: str = os.path.dirname(args[0])
         filename: str = os.path.basename(args[0])
         site_url, path = split_url(url)
-        with get_sharepoint_site(site_url, options.username, options.password, options.verbose) as site:
+        with get_sharepoint_site(site_url,
+                                 options.username,
+                                 options.password,
+                                 options.verbose,
+                                 options.timeout) as site:
             folder = get_folder(site, path)
             match = False
             for f in folder.files:
@@ -543,7 +577,11 @@ $ spo rmdir <SharePointUrl>
             raise ArgumentException()
         url: str = args[0].rstrip('/')
         site_url, path = split_url(url)
-        with get_sharepoint_site(site_url, options.username, options.password, options.verbose) as site:
+        with get_sharepoint_site(site_url,
+                                 options.username,
+                                 options.password,
+                                 options.verbose,
+                                 options.timeout) as site:
             folder = get_folder(site, path)
             if folder.files or folder.folders:
                 print('rmdir: failed to remove {}: not empty'.format(folder.folder_name),
