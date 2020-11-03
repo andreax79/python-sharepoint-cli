@@ -148,8 +148,12 @@ Lists files and folders.
 #### Usage
 
 ```console
-$ spo ls <SharePointUrl>
+$ spo ls [options] <SharePointUrl>
 ```
+
+##### Options
+
+-mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
 
 #### Examples
 
@@ -178,8 +182,12 @@ Deletes files.
 #### Usage
 
 ```console
-$ spo rm <SharePointUrl>
+$ spo rm [options] <SharePointUrl>
 ```
+
+##### Options
+
+-mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
 
 #### Examples
 

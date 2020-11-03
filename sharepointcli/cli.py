@@ -8,6 +8,7 @@ import argparse
 import traceback
 import fnmatch
 import configparser
+from datetime import datetime
 from requests_ntlm import HttpNtlmAuth
 from getpass import getpass
 from typing import Optional, List, NoReturn, Tuple, IO
@@ -184,6 +185,9 @@ class ArgumentParser(argparse.ArgumentParser):
         self.add_argument('-t', '--timeout',
                           dest='timeout',
                           type=float)
+        self.add_argument('-mtime', '--mtime',
+                          dest='mtime',
+                          type=str)
         self.usage = USAGE.format(prog=self.prog)
 
     def exit(self, status: int = 0, message: Optional[str] = None) -> NoReturn:
@@ -199,6 +203,18 @@ class ArgumentParser(argparse.ArgumentParser):
                 args.argv.append(arg)
             else:
                 args.args.append(arg)
+        # Parse mtime option (file data was last modified n*24 hours ago)
+        if args.mtime:
+            args.mtime_now = datetime.utcnow()
+            if args.mtime.startswith('+'):
+                mtime = int(args.mtime[1:])
+                args.mtime_check = lambda m : m > mtime
+            elif args.mtime.startswith('-'):
+                mtime = int(args.mtime[1:])
+                args.mtime_check = lambda m : m < mtime
+            else:
+                mtime = int(args.mtime)
+                args.mtime_check = lambda m: m == mtime
         return args
 
 
@@ -439,8 +455,12 @@ Lists files and folders.
 #### Usage
 
 ```console
-$ spo ls <SharePointUrl>
+$ spo ls [options] <SharePointUrl>
 ```
+
+##### Options
+
+-mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
 
 #### Examples
 
@@ -477,6 +497,10 @@ $ spo ls 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
                           file=self.stdout)
             for f in folder.files:
                 if not filename or fnmatch.fnmatch(f['Name'], filename):
+                    if options.mtime:
+                        m = (options.mtime_now - datetime.fromisoformat(f['TimeLastModified'].rstrip('Z'))).days
+                        if not options.mtime_check(m):
+                            continue
                     match = True
                     t = f['TimeLastModified'].replace('T', ' ')[:16]
                     print('{t:16} {Length:>13} {Name}'.format(t=t, **f),
@@ -526,8 +550,12 @@ Deletes files.
 #### Usage
 
 ```console
-$ spo rm <SharePointUrl>
+$ spo rm [options] <SharePointUrl>
 ```
+
+##### Options
+
+-mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
 
 #### Examples
 
@@ -551,6 +579,10 @@ $ spo rm 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
             match = False
             for f in folder.files:
                 if fnmatch.fnmatch(f['Name'], filename):
+                    if options.mtime:
+                        m = (options.mtime_now - datetime.fromisoformat(f['TimeLastModified'].rstrip('Z'))).days
+                        if not options.mtime_check(m):
+                            continue
                     match = True
                     folder.delete_file(f['Name'])
             if not match:

@@ -33,3 +33,11 @@
 
 - read option from environment variables
 
+## 1.2.0
+
+2020-11-03
+
+### Added
+
+- add -mtime option
+
