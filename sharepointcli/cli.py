@@ -11,7 +11,7 @@ import configparser
 from datetime import datetime
 from requests_ntlm import HttpNtlmAuth
 from getpass import getpass
-from typing import Optional, List, NoReturn, Tuple, IO
+from typing import Any, Dict, IO, List, NoReturn, Optional, Tuple
 from contextlib import contextmanager
 from .sso import SSOAuth
 from shareplum import Site  # type: ignore
@@ -37,6 +37,7 @@ EXIT_FAILURE = 1
 EXIT_PARSER_ERROR = 2
 RE_SHAREPOINT_COM = re.compile('^https://[^\\.]+.sharepoint.com/.*')
 TIMEOUT = 60
+ISO_FMT = '%Y-%m-%dT%H:%M:%S'
 USAGE = """\
 {prog} [-u USERNAME] [-p PASSWORD] [-t TIMEOUT] [-v] <command> [parameters]
 
@@ -70,7 +71,7 @@ def is_remote(url: str) -> bool:
 
 
 def is_office365_sharepoint(url: str) -> bool:
-    return RE_SHAREPOINT_COM.match(url)
+    return bool(RE_SHAREPOINT_COM.match(url))
 
 
 def load_credentials(site_url: str,
@@ -163,6 +164,21 @@ def format_help(md: str) -> str:
     return '\n'.join(result)
 
 
+def filter_folder_files(folder: _Folder,
+                        options: argparse.Namespace,
+                        pattern: Optional[str] = None) -> List[Dict[str, Any]]:
+    " Filter folder files by patter and time "
+    result: List[Dict[str, Any]] = []
+    for f in folder.files:
+        if not pattern or fnmatch.fnmatch(f['Name'], pattern):
+            if options.mtime:
+                m = (options.mtime_now - datetime.strptime(f['TimeLastModified'].rstrip('Z'), ISO_FMT)).days
+                if not options.mtime_check(m):
+                    continue
+            result.append(f)
+    return result
+
+
 class ArgumentParser(argparse.ArgumentParser):
 
     def __init__(self,
@@ -208,10 +224,10 @@ class ArgumentParser(argparse.ArgumentParser):
             args.mtime_now = datetime.utcnow()
             if args.mtime.startswith('+'):
                 mtime = int(args.mtime[1:])
-                args.mtime_check = lambda m : m > mtime
+                args.mtime_check = lambda m: m > mtime
             elif args.mtime.startswith('-'):
                 mtime = int(args.mtime[1:])
-                args.mtime_check = lambda m : m < mtime
+                args.mtime_check = lambda m: m < mtime
             else:
                 mtime = int(args.mtime)
                 args.mtime_check = lambda m: m == mtime
@@ -495,16 +511,11 @@ $ spo ls 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
                     match = True
                     print('{t:16} {Length:>13} {Name}'.format(t='', Length='PRE', Name=f + '/'),
                           file=self.stdout)
-            for f in folder.files:
-                if not filename or fnmatch.fnmatch(f['Name'], filename):
-                    if options.mtime:
-                        m = (options.mtime_now - datetime.fromisoformat(f['TimeLastModified'].rstrip('Z'))).days
-                        if not options.mtime_check(m):
-                            continue
-                    match = True
-                    t = f['TimeLastModified'].replace('T', ' ')[:16]
-                    print('{t:16} {Length:>13} {Name}'.format(t=t, **f),
-                          file=self.stdout)
+            for f in filter_folder_files(folder=folder, options=options, pattern=filename):
+                match = True
+                t = f['TimeLastModified'].replace('T', ' ')[:16]
+                print('{t:16} {Length:>13} {Name}'.format(t=t, **f),
+                      file=self.stdout)
         return EXIT_SUCCESS if match else EXIT_FAILURE
 
     def do_mkdir(self, args: List[str], options: argparse.Namespace) -> int:
@@ -577,14 +588,9 @@ $ spo rm 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
                                  options.timeout) as site:
             folder = get_folder(site, path)
             match = False
-            for f in folder.files:
-                if fnmatch.fnmatch(f['Name'], filename):
-                    if options.mtime:
-                        m = (options.mtime_now - datetime.fromisoformat(f['TimeLastModified'].rstrip('Z'))).days
-                        if not options.mtime_check(m):
-                            continue
-                    match = True
-                    folder.delete_file(f['Name'])
+            for f in filter_folder_files(folder=folder, options=options, pattern=filename):
+                match = True
+                folder.delete_file(f['Name'])
             if not match:
                 raise NotFoundError('{} does not exist'.format(os.path.join(folder.folder_name, filename)))
             print('rm: {} deleted'.format(os.path.join(folder.folder_name, filename)),
