@@ -2,44 +2,36 @@
 
 import os
 import os.path
-import re
 import sys
 import argparse
 import traceback
-import fnmatch
 import configparser
-from datetime import datetime
-from requests_ntlm import HttpNtlmAuth
-from getpass import getpass
-from typing import Any, Dict, IO, List, NoReturn, Optional, Tuple
-from contextlib import contextmanager
-from .sso import SSOAuth
-from shareplum import Site  # type: ignore
-from shareplum.site import Version  # type: ignore
-from shareplum.errors import ShareplumRequestError  # type: ignore
-from shareplum.folder import _Folder  # type: ignore
+import glob
+from datetime import datetime, timezone
+from typing import IO, List, NoReturn, Optional
+from .commons import (
+    EXIT_PARSER_ERROR,
+    EXIT_SUCCESS,
+    EXIT_FAILURE,
+    ArgumentParserError,
+    ArgumentException,
+)
+from .utils import (
+    get_credentials_path,
+    get_sharepoint_site,
+    get_folder,
+    is_remote,
+    split_url,
+    load_credentials,
+    get_tenant_id,
+    get_account,
+    filter_folder_files,
+)
 
-__all__ = [
-    'SPOCli',
-    'get_sharepoint_site',
-    'split_url',
-    'get_folder',
-    'main'
-]
+__all__ = ["SPOCli", "main"]
 
-ENV_CREDENTIALS = 'SPO_CREDENTIALS_FILE'
-ENV_USERNAME = 'SPO_USERNAME'
-ENV_PASSWORD = 'SPO_PASSWORD'
-ENV_TIMEOUT = 'SPO_TIMEOUT'
-CREDENTIALS = '~/.spo/credentials'
-EXIT_SUCCESS = 0
-EXIT_FAILURE = 1
-EXIT_PARSER_ERROR = 2
-RE_SHAREPOINT_COM = re.compile('^https://[^\\.]+.sharepoint.com/.*')
-TIMEOUT = 60
-ISO_FMT = '%Y-%m-%dT%H:%M:%S'
 USAGE = """\
-{prog} [-u USERNAME] [-p PASSWORD] [-t TIMEOUT] [-v] <command> [parameters]
+{prog} [--client_id client_id] [--client_secret client_secret] [--tenant_id tenant_id] [-v] <command> [parameters]
 
 To see help text, you can run:
 
@@ -48,162 +40,38 @@ To see help text, you can run:
   """
 
 
-class ArgumentParserError(Exception):
-    pass
-
-
-class ArgumentException(Exception):
-    pass
-
-
-class NotFoundError(Exception):
-    pass
-
-
-def split_url(url: str) -> Tuple[str, str]:
-    site_url = '/'.join(url.split('/')[:5]) + '/'  # 'https://XXXXX.sharepoint.com/sites/'
-    path = url[len(site_url):]  # 'Shared Documents/...'
-    return (site_url, path)
-
-
-def is_remote(url: str) -> bool:
-    return url.startswith('https://')
-
-
-def is_office365_sharepoint(url: str) -> bool:
-    return bool(RE_SHAREPOINT_COM.match(url))
-
-
-def load_credentials(site_url: str,
-                     username: Optional[str] = None,
-                     password: Optional[str] = None) -> Tuple[str, str]:
-    username = username or os.environ.get(ENV_USERNAME)
-    password = password or os.environ.get(ENV_PASSWORD)
-    if username and password:
-        return (username, password)
-    config = configparser.ConfigParser()
-    config.read(os.path.expanduser(os.environ.get(ENV_CREDENTIALS) or CREDENTIALS))
-    domain = site_url.split('/')[2]
-    section = domain
-    if section not in config:
-        section = 'default'
-    if section not in config:
-        raise ArgumentParserError('Add [{}] section to {} or specify username and password'.format(
-            domain, CREDENTIALS))
-    username = config[section]['username']
-    password = config[section]['password']
-    return (username, password)
-
-
-@contextmanager
-def get_sharepoint_site(site_url: str,
-                        username: Optional[str] = None,
-                        password: Optional[str] = None,
-                        verbose: bool = False,
-                        timeout: Optional[int] = None,
-                        version: Version = None) -> Site:
-    if version is None:
-        version = Version.v365 if is_office365_sharepoint(site_url) else Version.v2013
-    username, password = load_credentials(site_url, username, password)
-    if timeout is None:
-        try:
-            timeout = int(os.environ[ENV_TIMEOUT])
-        except Exception:
-            timeout = TIMEOUT
-    if is_office365_sharepoint(site_url):
-        sso_auth = SSOAuth(site_url, username=username, password=password, verbose=verbose)
-        try:
-            authcookie = sso_auth.get_cookies()
-            site = Site(site_url, version=version, authcookie=authcookie, timeout=timeout)
-        except ShareplumRequestError:
-            authcookie = sso_auth.get_cookies(force_login=True)
-            site = Site(site_url, version=version, authcookie=authcookie, timeout=timeout)
-    else:
-        auth = HttpNtlmAuth(username, password)
-        site = Site(site_url, version=version, auth=auth, timeout=timeout)
-        # site._session.headers['Accept'] = 'application/json;odata=verbose'
-    try:
-        yield site
-    finally:
-        site._session.close()
-
-
-def get_folder(site: Site, path: str) -> _Folder:
-    " Get site folder by path "
-    folder = site.Folder('')
-    path = path.strip('/')
-    if not path:
-        return folder  # root folder
-    try:
-        for part in path.split('/'):
-            if part not in folder.folders:
-                raise NotFoundError('{} does not exist'.format(path))
-            folder = site.Folder(folder.folder_name + ('/' if folder.folder_name else '') + part)
-    except ShareplumRequestError:
-        raise NotFoundError('{} does not exist'.format(path))
-    return folder
-
-
 def format_help(md: str) -> str:
     " Render markdown help to text "
     result = []
-    for line in (md or '').split('\n'):
+    for line in (md or "").split("\n"):
         line = line.strip()
-        if line.startswith('```'):
+        if line.startswith("```"):
             continue
         line = line.replace("`", "")
-        if line.startswith('### '):
+        if line.startswith("### "):
             line = line[4:].upper()
-        elif line.startswith('#### '):
+        elif line.startswith("#### "):
             line = line[5:]
-        elif line.startswith('$ '):
-            line = '  ' + line[2:]
+        elif line.startswith("$ "):
+            line = "  " + line[2:]
         else:
-            line = '  ' + line
+            line = "  " + line
         result.append(line.rstrip())
-    return '\n'.join(result)
-
-
-def filter_folder_files(folder: _Folder,
-                        options: argparse.Namespace,
-                        pattern: Optional[str] = None) -> List[Dict[str, Any]]:
-    " Filter folder files by patter and time "
-    result: List[Dict[str, Any]] = []
-    for f in folder.files:
-        if not pattern or fnmatch.fnmatch(f['Name'], pattern):
-            if options.mtime:
-                m = (options.mtime_now - datetime.strptime(f['TimeLastModified'].rstrip('Z'), ISO_FMT)).days
-                if not options.mtime_check(m):
-                    continue
-            result.append(f)
-    return result
+    return "\n".join(result)
 
 
 class ArgumentParser(argparse.ArgumentParser):
-
-    def __init__(self,
-                 commands: List[str],
-                 prog: Optional[str] = None,
-                 stderr: IO[str] = sys.stderr,
-                 **kargs) -> None:
+    def __init__(self, commands: List[str], prog: Optional[str] = None, stderr: IO[str] = sys.stderr, **kargs) -> None:
         super().__init__(add_help=False, **kargs)
         self.stderr = stderr
-        self.add_argument('command',
-                          choices=commands)
-        self.add_argument('args', nargs='*')
-        self.add_argument('-u', '--username',
-                          dest='username')
-        self.add_argument('-p', '--password',
-                          dest='password')
-        self.add_argument('-v', '--verbose',
-                          action='store_true',
-                          dest='verbose')
-        self.add_argument('-t', '--timeout',
-                          dest='timeout',
-                          type=float)
-        self.add_argument('-mtime', '--mtime',
-                          dest='mtime',
-                          type=str)
+        self.add_argument("command", choices=commands)
+        self.add_argument("args", nargs="*")
+        self.add_argument("--client_id", dest="client_id")
+        self.add_argument("--client_secret", dest="client_secret")
+        self.add_argument("--tenant_id", dest="tenant_id")
+        self.add_argument("-v", "--verbose", action="store_true", dest="verbose")
+        self.add_argument("-mtime", "--mtime", dest="mtime", type=str)
+        self.add_argument("-help", "--help", dest="help", action="store_true", default=False)
         self.usage = USAGE.format(prog=self.prog)
 
     def exit(self, status: int = 0, message: Optional[str] = None) -> NoReturn:
@@ -215,17 +83,17 @@ class ArgumentParser(argparse.ArgumentParser):
         args, remaining_args = self.parse_known_args(args, namespace)
         args.argv = []
         for arg in remaining_args:
-            if arg.startswith('-'):
+            if arg.startswith("-"):
                 args.argv.append(arg)
             else:
                 args.args.append(arg)
         # Parse mtime option (file data was last modified n*24 hours ago)
         if args.mtime:
-            args.mtime_now = datetime.utcnow()
-            if args.mtime.startswith('+'):
+            args.mtime_now = datetime.now(timezone.utc)
+            if args.mtime.startswith("+"):
                 mtime = int(args.mtime[1:])
                 args.mtime_check = lambda m: m > mtime
-            elif args.mtime.startswith('-'):
+            elif args.mtime.startswith("-"):
                 mtime = int(args.mtime[1:])
                 args.mtime_check = lambda m: m < mtime
             else:
@@ -235,15 +103,16 @@ class ArgumentParser(argparse.ArgumentParser):
 
 
 class SPOCli(object):
-
-    def __init__(self,
-                 prog: Optional[str] = None,
-                 stdout: IO[str] = sys.stdout,
-                 stderr: IO[str] = sys.stderr) -> None:
-        self.prog = os.path.basename(prog or sys.argv[0] or '')
+    def __init__(
+        self,
+        prog: Optional[str] = None,
+        stdout: IO[str] = sys.stdout,
+        stderr: IO[str] = sys.stderr,
+    ) -> None:
+        self.prog = os.path.basename(prog or sys.argv[0] or "")
         self.stdout = stdout
         self.stderr = stderr
-        self.commands = sorted([x[3:] for x in dir(self) if x.startswith('do_')])
+        self.commands = sorted([x[3:] for x in dir(self) if x.startswith("do_")])
 
     def cmd(self, args: Optional[List[str]]) -> int:
         parser = ArgumentParser(commands=self.commands, prog=self.prog)
@@ -252,171 +121,186 @@ class SPOCli(object):
             options = parser.parse_args(args=args)
             if options.verbose:
                 print(options, file=self.stderr)
-            method = getattr(self, 'do_' + options.command)
+            if options.help:
+                options.args = [options.command]
+                options.command = "help"
+            method = getattr(self, "do_" + options.command)
             return method(options.args, options)
         except ArgumentParserError:
             return EXIT_PARSER_ERROR
         except ArgumentException:
             return self.usage(options)
         except Exception as ex:
-            print('{}: {}'.format(options.command if options else self.prog, ex),
-                  file=self.stderr)
+            print(
+                "{}: {}".format(options.command if options else self.prog, ex),
+                file=self.stderr,
+            )
             if options and options.verbose:
                 traceback.print_exc(file=self.stderr)
             return EXIT_FAILURE
 
     def usage(self, options: argparse.Namespace) -> int:
         " Prints command usage "
-        doc = getattr(self, 'do_' + options.command).__doc__
+        doc = getattr(self, "do_" + options.command).__doc__
         doc = format_help(doc)
-        usage = ''
+        usage = ""
         usage_section = None
-        for line in doc.split('\n'):
+        for line in doc.split("\n"):
             if not line.strip():
                 continue
-            elif line.startswith('Usage'):
+            elif line.startswith("Usage"):
                 usage_section = True
             elif usage_section:
                 usage = line.strip()
                 break
-        print('usage: {}'.format(usage),
-              file=self.stderr)
+        print("usage: {}".format(usage), file=self.stderr)
         return EXIT_PARSER_ERROR
 
     def do_configure(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### configure
+        ### configure
 
-Configures credentials.
+        Configures credentials.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo configure [domain]
-```
+        ```console
+        $ spo configure [domain]
+        ```
         """
         if set(options.argv):
-            raise ArgumentException('Unrecognized arguments')
-        domain: str = args[0] if len(args) > 0 else ''
-        if not domain:
-            prompt: str = 'SharePoint domain (e.g. example.sharepoint.com){}: ' \
-                          .format((' [' + domain + ']') if domain else '')
-            domain = input(prompt).strip()
+            raise ArgumentException("Unrecognized arguments")
+        tenant: str = args[0] if len(args) > 0 else ""
+        if not tenant:
+            prompt: str = "SharePoint domain (e.g. example.sharepoint.com): "
+            tenant = input(prompt).strip()
         try:
-            username, password = load_credentials('https://' + domain, options.username, options.password)
+            print("SharePoint domain: {}".format(tenant))
+            client_id, client_secret, tenant_id = load_credentials(
+                tenant, options.client_id, options.client_secret, options.tenant_id
+            )
         except Exception:
-            username = options.username
-            password = options.password
-        if not options.username:
-            prompt = 'Username{}: '.format((' [' + username + ']') if username else '')
-            username  = input(prompt).strip() or username
-        if not options.password:
-            prompt = 'Password{}: '.format((' [' + '*' * len(password) + ']') if password else '')
-            password  = getpass(prompt).strip() or password
-        if not domain or not username or not password:
+            client_id = options.client_id
+            client_secret = options.client_secret
+            tenant_id = options.tenant_id
+        if tenant_id is None:
+            tenant_id = get_tenant_id(tenant)
+        if tenant_id is None:
+            print("Tenant not found")
+            return EXIT_FAILURE
+        print("Tenant Id: {}".format(tenant_id))
+        if not options.client_id:
+            prompt = "Client Id{}: ".format((" [" + client_id + "]") if client_id else "")
+            client_id = input(prompt).strip() or client_id
+        if not options.client_secret:
+            prompt = "Client Secret{}: ".format((" [" + client_secret + "]") if client_secret else "")
+            client_secret = input(prompt).strip() or client_secret
+        if not tenant or not client_id or not client_secret:
             return EXIT_FAILURE
         # Check credentials
-        url = 'https://' + domain + '/'
-        sso_auth = SSOAuth(url,
-                           username=username,
-                           password=password,
-                           verbose=options.verbose)
-        if is_office365_sharepoint(url):
-            authcookie = sso_auth.get_cookies()
-            site = Site(url, version=Version.v365, authcookie=authcookie)
-        else:
-            auth = HttpNtlmAuth(username, password)
-            site = Site(url, version=Version.v2013, auth=auth)
-        assert(site)
+        account = get_account(tenant, client_id, client_secret, tenant_id, interactive=True)
+        assert account
         # Write credentials
-        config_path = os.path.expanduser(CREDENTIALS)
-        os.makedirs(os.path.dirname(config_path), mode=0o700, exist_ok=True)
+        credentials = get_credentials_path()
+        os.makedirs(os.path.dirname(credentials), mode=0o700, exist_ok=True)
         config = configparser.ConfigParser()
-        config.read(config_path)
-        config[domain] = {
-            'username': username,
-            'password': password
+        config.read(credentials)
+        try:
+            old_config = config[tenant]
+        except Exception:
+            old_config = None
+        new_config = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "tenant_id": tenant_id,
         }
-        with open(config_path, 'w') as f:
+        # Copy old (obsolete) config parameters
+        for key in ["username", "password"]:
+            if old_config.get(key):
+                new_config[key] = old_config.get(key)
+        config[tenant] = new_config
+        with open(credentials, "w") as f:
             config.write(f)
         return EXIT_SUCCESS
 
     def do_cp(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### cp
+        ### cp
 
-Copying a local file to SharePoint.
+        Copying a local file to SharePoint.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo cp <LocalPath> <SharePointUrl>   or   cp <SharePointUrl> <LocalPath>
-```
+        ```console
+        $ spo cp <LocalPath> <SharePointUrl>   or   cp <SharePointUrl> <LocalPath>
+        ```
 
-#### Examples
+        #### Examples
 
-The following cp command copies a single file to a specified site:
+        The following cp command copies a single file to a specified site:
 
-```console
-$ spo cp test.txt 'https://example.sharepoint.com/sites/example/Shared documents/test.txt'
-upload: test.txt to https://example.sharepoint.com/sites/example/Shared documents/test.txt
-```
+        ```console
+        $ spo cp test.txt 'https://example.sharepoint.com/sites/example/Shared documents/test.txt'
+        upload: test.txt to https://example.sharepoint.com/sites/example/Shared documents/test.txt
+        ```
 
-The following cp command copies a single file from a SharePoint site:
+        The following cp command copies a single file from a SharePoint site:
 
-```console
-$ spo cp 'https://example.sharepoint.com/sites/example/Shared documents/test.txt' test.txt
-download: https://example.sharepoint.com/sites/example/Shared documents/test.txt' to test.txt
-```
+        ```console
+        $ spo cp 'https://example.sharepoint.com/sites/example/Shared documents/test.txt' test.txt
+        download: https://example.sharepoint.com/sites/example/Shared documents/test.txt' to test.txt
+        ```
         """
         if set(options.argv):
-            raise ArgumentException('Unrecognized arguments')
+            raise ArgumentException("Unrecognized arguments")
         if len(args) != 2:
             raise ArgumentException()
         source: str = args[0]
-        target: str = args[1] if len(args) > 1 else ''
-
+        target: str = args[1] if len(args) > 1 else ""
         if is_remote(source) and not is_remote(target):  # download
             filename = os.path.basename(source)
             url = os.path.dirname(source)
             if not target:
-                target = filename
-            elif os.path.isdir(target):
-                target = os.path.join(target, filename)
-            site_url, path = split_url(url)
-            with get_sharepoint_site(site_url,
-                                     options.username,
-                                     options.password,
-                                     options.verbose,
-                                     options.timeout) as site:
-                folder = get_folder(site, path)
-                if filename not in [x['Name'] for x in folder.files]:
-                    raise NotFoundError('{} does not exist'.format(os.path.join(folder.folder_name, filename)))
-                print('download: {} to {}'.format(source, target), file=self.stderr)
-                content = folder.get_file(filename)
-                with open(target, 'wb') as f:
-                    f.write(content)
+                target = "."
+            tenant, site_name, path = split_url(url)
+            site = get_sharepoint_site(tenant, site_name, options)
+            folder = get_folder(site, path)
+            files = filter_folder_files(folder=folder, options=options, pattern=filename)
+            if not files:
+                raise FileNotFoundError("{} does not exist".format(source))
+            elif len(files) > 1 and not os.path.isdir(target):
+                raise NotADirectoryError("Target is not a directory")
+            for f in files:
+                print(
+                    "download: {} to {}".format(os.path.join(path, f.name), target),
+                    file=self.stderr,
+                )
+                if os.path.isdir(target):  # target is a directory
+                    f.download(to_path=target)
+                else:  # target is a filename
+                    f.download(to_path=os.path.dirname(target), name=os.path.basename(target))
             return EXIT_SUCCESS
 
         elif not is_remote(source) and is_remote(target):  # upload
-            if target.endswith('/'):
-                filename = os.path.basename(source)
-                url = target
-            else:
-                filename = os.path.basename(target)
-                url = os.path.dirname(target)
-            site_url, path = split_url(url)
-            with get_sharepoint_site(site_url,
-                                     options.username,
-                                     options.password,
-                                     options.verbose,
-                                     options.timeout) as site:
+            tenant, site_name, path = split_url(target)
+            site = get_sharepoint_site(tenant, site_name, options)
+            files = glob.glob(source)
+            if not files:
+                raise FileNotFoundError("{} does not exist".format(source))
+            try:  # target is a folder
                 folder = get_folder(site, path)
-                folder.timeout = site.timeout
-                with open(source, 'rb') as f:
-                    content = f.read()
-                print('upload: {} to {}'.format(source, target), file=self.stderr)
-                folder.upload_file(content, filename)
+                for f in files:
+                    print("upload: {} to {}".format(f, target), file=self.stderr)
+                    folder.upload_file(item=f)
+
+            except FileNotFoundError:  # target is not a folder
+                filename = os.path.basename(path)
+                folder = get_folder(site, os.path.dirname(path))
+                if len(files) > 1:
+                    raise NotADirectoryError("Target is not a directory")
+                for f in files:
+                    print("upload: {} to {}".format(f, target), file=self.stderr)
+                    folder.upload_file(item=f, item_name=filename)
             return EXIT_SUCCESS
 
         else:
@@ -424,234 +308,244 @@ download: https://example.sharepoint.com/sites/example/Shared documents/test.txt
 
     def do_help(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### help
+        ### help
 
-Displays commands help.
+        Displays commands help.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo help [topic]
-```
+        ```console
+        $ spo help [topic]
+        ```
         """
-        if set(options.argv) - set(['--raw']):
-            raise ArgumentException('Unrecognized arguments')
+        if set(options.argv) - set(["--raw"]):
+            raise ArgumentException("Unrecognized arguments")
         if len(args) == 1 and args[0] in self.commands:
-            doc = getattr(self, 'do_' + args[0]).__doc__
-            if '--raw' not in options.argv:
+            doc = getattr(self, "do_" + args[0]).__doc__
+            if "--raw" in options.argv:
+                doc = '\n'.join(line.strip() for line in doc.split('\n'))
+            else:
                 doc = format_help(doc)
             print(doc, file=self.stdout)
         else:
             if len(args) > 0:
-                print("""
+                print(
+                    """
 Sorry, no help available on {}.
 
 Help is available on:
-""".format(args[0]), file=self.stdout)
+""".format(
+                        args[0]
+                    ),
+                    file=self.stdout,
+                )
             else:
-                print("""
+                print(
+                    """
 Help can be obtained on a particular topic by running:
 
   spo help topic
 
 Additional help is available on:
-""", file=self.stdout)
+""",
+                    file=self.stdout,
+                )
             for command in self.commands:
-                doc = [x.strip() for x in getattr(self, 'do_' + command).__doc__.split('\n')]
-                print('  {command:20} {help}'.format(command=command, help=doc[3]), file=self.stdout)
-        print('', file=self.stdout)
+                doc = [x.strip() for x in getattr(self, "do_" + command).__doc__.split("\n")]
+                print(
+                    "  {command:20} {help}".format(command=command, help=doc[3]),
+                    file=self.stdout,
+                )
+        print("", file=self.stdout)
         return EXIT_SUCCESS
 
     def do_ls(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### ls
+        ### ls
 
-Lists files and folders.
+        Lists files and folders.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo ls [options] <SharePointUrl>
-```
+        ```console
+        $ spo ls [options] <SharePointUrl>
+        ```
 
-##### Options
+        ##### Options
 
--mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
+        -mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
 
-#### Examples
+        #### Examples
 
-```console
-$ spo ls 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
-```
+        ```console
+        $ spo ls 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
+        ```
         """
         if set(options.argv):
-            raise ArgumentException('Unrecognized arguments')
+            raise ArgumentException("Unrecognized arguments")
         if len(args) != 1 or not is_remote(args[0]):
             raise ArgumentException()
         url: str = args[0]
-        site_url, path = split_url(url)
+        tenant, site_name, path = split_url(url)
         match = False
-        with get_sharepoint_site(site_url,
-                                 options.username,
-                                 options.password,
-                                 options.verbose,
-                                 options.timeout) as site:
+        site = get_sharepoint_site(tenant, site_name, options)
+        try:
+            folder = get_folder(site, path)
+            filename = None
+            match = True
+        except FileNotFoundError:
             try:
-                folder = get_folder(site, path)
-                filename = None
-                match = True
-            except NotFoundError:
-                try:
-                    folder = get_folder(site, os.path.dirname(path))
-                    filename = os.path.basename(path)
-                except NotFoundError:
-                    return EXIT_FAILURE
-            for f in folder.folders:
-                if not filename or fnmatch.fnmatch(f, filename):
-                    match = True
-                    print('{t:16} {Length:>13} {Name}'.format(t='', Length='PRE', Name=f + '/'),
-                          file=self.stdout)
-            for f in filter_folder_files(folder=folder, options=options, pattern=filename):
-                match = True
-                t = f['TimeLastModified'].replace('T', ' ')[:16]
-                print('{t:16} {Length:>13} {Name}'.format(t=t, **f),
-                      file=self.stdout)
+                folder = get_folder(site, os.path.dirname(path))
+                filename = os.path.basename(path)
+            except FileNotFoundError:
+                return EXIT_FAILURE
+        for f in filter_folder_files(folder=folder, options=options, pattern=filename, include_folders=True):
+            match = True
+            if f.is_folder:
+                print(
+                    "{modified:%Y-%m-%d %H:%M} {size:>13} {name}".format(name=f.name + "/", size="PRE", modified=f.modified),
+                    file=self.stdout,
+                )
+            else:
+                print(
+                    "{modified:%Y-%m-%d %H:%M} {size:>13} {name}".format(name=f.name, size=f.size, modified=f.modified),
+                    file=self.stdout,
+                )
         return EXIT_SUCCESS if match else EXIT_FAILURE
 
     def do_mkdir(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### mkdir
+        ### mkdir
 
-Creates folder.
+        Creates folder.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo mkdir <SharePointUrl>
-```
+        ```console
+        $ spo mkdir <SharePointUrl>
+        ```
         """
         if set(options.argv):
-            raise ArgumentException('Unrecognized arguments')
+            raise ArgumentException("Unrecognized arguments")
         if len(args) != 1 or not is_remote(args[0]):
             raise ArgumentException()
-        url: str = args[0].rstrip('/')
-        site_url, path = split_url(url)
-        with get_sharepoint_site(site_url,
-                                 options.username,
-                                 options.password,
-                                 options.verbose,
-                                 options.timeout) as site:
-            parent_folder = get_folder(site, os.path.dirname(path))
-            name = os.path.basename(path)
-            if name in parent_folder.folders:
-                print('mkdir: cannot create directory {}: directory exists'.format(path),
-                      file=self.stderr)
-                return EXIT_FAILURE
-            folder = site.Folder(path)
-            print('mkdir: {} created'.format(folder.folder_name),
-                  file=self.stdout)
+        url: str = args[0].rstrip("/")
+        tenant, site_name, path = split_url(url)
+        site = get_sharepoint_site(tenant, site_name, options)
+        parent_folder = get_folder(site, os.path.dirname(path))
+        name = os.path.basename(path)
+        if name in [x.name for x in parent_folder.get_items()]:
+            print(
+                "mkdir: cannot create directory {}: directory exists".format(url),
+                file=self.stderr,
+            )
+            return EXIT_FAILURE
+        parent_folder.create_child_folder(name=name)
+        print("mkdir: {} created".format(url), file=self.stdout)
         return EXIT_SUCCESS
 
     def do_rm(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### rm
+        ### rm
 
-Deletes files.
+        Deletes files.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo rm [options] <SharePointUrl>
-```
+        ```console
+        $ spo rm [options] <SharePointUrl>
+        ```
 
-##### Options
+        ##### Options
 
--mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
+        -mtime n  File's status was last changed n*24 hours ago. ('+n' more than n, 'n' exactly n, '-n' less than n)
 
-#### Examples
+        #### Examples
 
-```console
-$ spo rm 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
-```
+        ```console
+        $ spo rm 'https://example.sharepoint.com/sites/example/Shared documents/*.txt'
+        ```
         """
         if set(options.argv):
-            raise ArgumentException('Unrecognized arguments')
+            raise ArgumentException("Unrecognized arguments")
         if len(args) != 1 or not is_remote(args[0]):
             raise ArgumentException()
         url: str = os.path.dirname(args[0])
         filename: str = os.path.basename(args[0])
-        site_url, path = split_url(url)
-        with get_sharepoint_site(site_url,
-                                 options.username,
-                                 options.password,
-                                 options.verbose,
-                                 options.timeout) as site:
-            folder = get_folder(site, path)
-            match = False
-            for f in filter_folder_files(folder=folder, options=options, pattern=filename):
-                match = True
-                folder.delete_file(f['Name'])
-            if not match:
-                raise NotFoundError('{} does not exist'.format(os.path.join(folder.folder_name, filename)))
-            print('rm: {} deleted'.format(os.path.join(folder.folder_name, filename)),
-                  file=self.stdout)
+        tenant, site_name, path = split_url(url)
+        site = get_sharepoint_site(tenant, site_name, options)
+        folder = get_folder(site, path)
+        match = False
+        for f in filter_folder_files(folder=folder, options=options, pattern=filename):
+            match = True
+            f.delete()
+        if not match:
+            raise FileNotFoundError("{} does not exist".format(os.path.join(url, filename)))
+        print(
+            "rm: {} deleted".format(os.path.join(url, filename)),
+            file=self.stdout,
+        )
         return EXIT_SUCCESS
 
     def do_rmdir(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### rmdir
+        ### rmdir
 
-Deletes folder.
+        Deletes folder.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo rmdir <SharePointUrl>
-```
+        ```console
+        $ spo rmdir <SharePointUrl>
+        ```
         """
         if set(options.argv):
-            raise ArgumentException('Unrecognized arguments')
+            raise ArgumentException("Unrecognized arguments")
         if len(args) != 1 or not is_remote(args[0]):
             raise ArgumentException()
-        url: str = args[0].rstrip('/')
-        site_url, path = split_url(url)
-        with get_sharepoint_site(site_url,
-                                 options.username,
-                                 options.password,
-                                 options.verbose,
-                                 options.timeout) as site:
-            folder = get_folder(site, path)
-            if folder.files or folder.folders:
-                print('rmdir: failed to remove {}: not empty'.format(folder.folder_name),
-                      file=self.stderr)
-                return EXIT_FAILURE
-            folder.delete_folder(folder.folder_name)
-            print('rmdir: {} deleted'.format(folder.folder_name),
-                  file=self.stdout)
-        return EXIT_SUCCESS
+        url: str = args[0].rstrip("/")
+        tenant, site_name, path = split_url(url)
+        site = get_sharepoint_site(tenant, site_name, options)
+        folder = get_folder(site, path)
+        if any(folder.get_items()):
+            print(
+                "rmdir: failed to remove {}: not empty".format(url),
+                file=self.stderr,
+            )
+            return EXIT_FAILURE
+        if folder.delete():
+            print("rmdir: {} deleted".format(url), file=self.stdout)
+            return EXIT_SUCCESS
+        else:
+            print("rmdir: error deleting {}".format(url), file=self.stderr)
+            return EXIT_FAILURE
 
     def do_version(self, args: List[str], options: argparse.Namespace) -> int:
         """
-### version
+        ### version
 
-Prints the version number.
+        Prints the version number.
 
-#### Usage
+        #### Usage
 
-```console
-$ spo version
-```
+        ```console
+        $ spo version
+        ```
         """
         from . import __version__
+        from O365 import __version__ as o365_version
+
         if set(options.argv):
-            raise ArgumentException('Unrecognized arguments')
-        print('{} {}'.format(self.prog, __version__),
-              file=self.stdout)
+            raise ArgumentException("Unrecognized arguments")
+        print("{} {}".format(self.prog, __version__), file=self.stdout)
+        print("{} {}".format("O365", o365_version), file=self.stdout)
         return EXIT_SUCCESS
 
 
-def main(args: Optional[List[str]] = None,
-         stdout: IO[str] = sys.stdout,
-         stderr: IO[str] = sys.stderr) -> int:
+def main(
+    args: Optional[List[str]] = None,
+    stdout: IO[str] = sys.stdout,
+    stderr: IO[str] = sys.stderr,
+) -> int:
     cli = SPOCli(stdout=stdout, stderr=stderr)
     return cli.cmd(args)

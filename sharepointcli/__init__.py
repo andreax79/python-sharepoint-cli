@@ -2,9 +2,6 @@
 
 from .cli import SPOCli, main
 
-__version__ = '1.3.1'
+__version__ = "2.0.0"
 
-__all__ = [
-    'SPOCli',
-    'main'
-]
+__all__ = ["SPOCli", "main"]

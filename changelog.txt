@@ -49,3 +49,10 @@
 
 - fix date parsing
 
+## 2.0.0
+
+2021-04-05
+
+### Changed
+
+- replace Shareplum with O365

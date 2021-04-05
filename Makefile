@@ -1,12 +1,13 @@
 SHELL=/bin/bash -e
 
 help:
+	@echo - make build
+	@echo - make clean
 	@echo - make coverage
+	@echo - make lint
 	@echo - make test
 	@echo - make typecheck
-	@echo - make lint
 	@echo - make release
-	@echo - make clean
 
 coverage:
 	python3 -m coverage run --source=sharepointcli test.py && python3 -m coverage report -m
@@ -20,9 +21,12 @@ typecheck:
 lint:
 	python3 setup.py flake8
 
-release:
-	make doc
-	python3 ./setup.py bdist_wheel
+build: clean doc
+	python3 setup.py bdist_wheel
+	python3 setup.py sdist bdist_wheel
+
+release: build
+	twine upload -r pypi dist/*
 
 doc:
 	-cat docs/header.md > README.md

@@ -14,9 +14,17 @@ Example:
 
 ```console
 $ spo configure
-SharePoint domain (e.g. example.sharepoint.com): example.sharepoint.com
-Username: test@example.com
-Password: *****
+SharePoint domain (e.g. example.sharepoint.com):
+Tenant Id: db3fe96d-1b57-4119-a5fd-bd139021158d
+Client Id: fa3ecc92-5994-475e-a647-1f81931aac43
+Client Secret: ~vaXZkx&836mH56FymE6Gx7j$t&JT.-5em
+Visit the following url to give consent:
+https://login.microsoftonline.com/db3fe96d-1b57-4119-a5fd-bd139021158d/oauth2/v2.0/authorize?response_type=...
+Paste the authenticated url here:
+https://login.microsoftonline.com/common/oauth2/nativeclient?code=....
+Authentication Flow Completed. Oauth Access Token Stored. You can now use the API.
+Authenticated!
+
 ```
 
 The credentials take precedence in the following order:
@@ -29,17 +37,17 @@ The credentials take precedence in the following order:
 
 You can use the following command line options to override the default configuration settings.
 
-* **--username <string>**
+* **--client_id <string>**
 
-  Specifies the username.
+  Specifies the Client Id.
 
-* **--password <string>**
+* **--client_secret <string>**
 
-  Specifies the password associated with the username.
+  Specifies the Client Secret
 
-* **--timeout <string>**
+* **--tenant_id <string>**
 
-  Specifies the timeout in seconds.
+  Specifies the Tenant Id
 
 #### Environment variables
 
@@ -50,22 +58,28 @@ overrides any value from the environment variables or the configuration file.
 
 The CLI supports the following environment variables:
 
+* **SPO_HOME**
+
+  Specifies the home directory.
+  The default path is "~/.spo".
+
 * **SPO_CREDENTIALS_FILE**
 
   Specifies the location of the file that the CLI to store credentials.
-  The default path is ~/.spo/credentials.
+  The default path is "~/.spo/credentials".
 
-* **SPO_USERNAME**
+* **SPO_CLIENT_ID**
 
-  Specifies the username.
+  Specifies the Client Id.
 
-* **SPO_PASSWORD**
+* **SPO_CLIENT_SECRET**
 
-  Specifies the password associated with the username.
+  Specifies the Client Secret
 
-* **SPO_TIMEOUT**
+* **SPO_TENANT_ID**
 
-  Specifies the timeout in seconds.
+  Specifies the Tenant Id
+
 
 #### Credentials file
 
@@ -74,7 +88,8 @@ For example, the file generated with `spo configure` looks similar to the follow
 
 ```ini
 [example.sharepoint.com]
-username = user@example.com
-password = secret
+client_id = fa3ecc92-5994-475e-a647-1f81931aac43
+client_secret = ~vaXZkx&836mH56FymE6Gx7j$t&JT.-5em
+tenant_id = db3fe96d-1b57-4119-a5fd-bd139021158d
 ```
 

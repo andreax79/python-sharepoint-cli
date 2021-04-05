@@ -1,4 +1,2 @@
-shareplum
-encrypted_cookiejar
+O365
 requests
-requests_ntlm
