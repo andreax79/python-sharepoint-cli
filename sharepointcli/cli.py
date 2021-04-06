@@ -186,7 +186,7 @@ class SPOCli(object):
         if tenant_id is None:
             tenant_id = get_tenant_id(tenant)
         if tenant_id is None:
-            print("Tenant not found")
+            print("Tenant not found", file=self.stderr)
             return EXIT_FAILURE
         print("Tenant Id: {}".format(tenant_id))
         if not options.client_id:
@@ -222,6 +222,38 @@ class SPOCli(object):
         with open(credentials, "w") as f:
             config.write(f)
         return EXIT_SUCCESS
+
+    def do_authenticate(self, args: List[str], options: argparse.Namespace) -> int:
+        """
+        ### authenticate
+
+        Performs the OAuth authentication flow using the console.
+
+        #### Usage
+
+        ```console
+        $ spo authenticate [domain]
+        ```
+        """
+        if set(options.argv):
+            raise ArgumentException("Unrecognized arguments")
+        tenant: str = args[0] if len(args) > 0 else ""
+        if not tenant:
+            prompt: str = "SharePoint domain (e.g. example.sharepoint.com): "
+            tenant = input(prompt).strip()
+        try:
+            print("SharePoint domain: {}".format(tenant))
+            client_id, client_secret, tenant_id = load_credentials(
+                tenant, options.client_id, options.client_secret, options.tenant_id
+            )
+        except Exception:
+            print("Tenant not found", file=self.stderr)
+            return EXIT_FAILURE
+        # Authenticate
+        account = get_account(tenant, client_id, client_secret, tenant_id, interactive=True)
+        if account:
+            print("Authenticated", file=self.stdout)
+        return EXIT_SUCCESS if account else EXIT_FAILURE
 
     def do_cp(self, args: List[str], options: argparse.Namespace) -> int:
         """
@@ -323,7 +355,7 @@ class SPOCli(object):
         if len(args) == 1 and args[0] in self.commands:
             doc = getattr(self, "do_" + args[0]).__doc__
             if "--raw" in options.argv:
-                doc = '\n'.join(line.strip() for line in doc.split('\n'))
+                doc = "\n".join(line.strip() for line in doc.split("\n"))
             else:
                 doc = format_help(doc)
             print(doc, file=self.stdout)

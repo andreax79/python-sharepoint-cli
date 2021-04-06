@@ -56,3 +56,11 @@
 ### Changed
 
 - replace Shareplum with O365
+
+## 2.0.1
+
+2021-04-06
+
+### Added
+
+- authenticate command

@@ -77,9 +77,12 @@ def load_credentials(
         section = "default"
     if section not in config:
         raise ArgumentParserError("Add [{}] section to {} or specify client_id and client_secret".format(tenant, credentials))
-    client_id = config[section]["client_id"]
-    client_secret = config[section]["client_secret"]
-    tenant_id = config[section]["tenant_id"] or get_tenant_id(tenant)
+    try:
+        client_id = config[section]["client_id"]
+        client_secret = config[section]["client_secret"]
+        tenant_id = config[section].get("tenant_id") or get_tenant_id(tenant)
+    except KeyError:
+        raise Exception("Please run 'spo configure' to configure credentials")
     return (client_id, client_secret, tenant_id)
 
 

@@ -33,6 +33,7 @@ doc:
 	-cat docs/installation.md > README.md
 	-cat docs/configuration.md >> README.md
 	-cat docs/usage.md >> README.md
+	-./spo.py --raw help authenticate >> README.md
 	-./spo.py --raw help configure >> README.md
 	-./spo.py --raw help cp >> README.md
 	-./spo.py --raw help help >> README.md

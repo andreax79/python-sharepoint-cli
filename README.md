@@ -104,6 +104,18 @@ Usage
 -----
 
 
+### authenticate
+
+Performs the OAuth authentication flow using the console.
+
+#### Usage
+
+```console
+$ spo authenticate [domain]
+```
+
+
+
 ### configure
 
 Configures credentials.
