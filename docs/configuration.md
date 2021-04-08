@@ -1,12 +1,15 @@
 Configuration
 -------------
 
+To allow authentication you first need to register your application.
+For steps on how to configure the app in the Azure portal, see [Register your app](https://docs.microsoft.com/en-us/graph/auth-register-app-v2)
+
 For general use, the `spo configure` command is the fastest way to set up SharePoint CLI.
 When you enter this command, the CLI prompts you for the following configurations:
 
 * SharePoint domain
-* Username
-* Password
+* Application (client) ID
+* Application (client) secret
 
 The `spo configure` command stores the credentials in the credentials file.
 You can configure configure multiple credentials for different SharePoint domains.
