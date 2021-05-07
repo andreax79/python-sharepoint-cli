@@ -205,19 +205,20 @@ class SPOCli(object):
         os.makedirs(os.path.dirname(credentials), mode=0o700, exist_ok=True)
         config = configparser.ConfigParser()
         config.read(credentials)
-        try:
-            old_config = config[tenant]
-        except Exception:
-            old_config = None
         new_config = {
             "client_id": client_id,
             "client_secret": client_secret,
             "tenant_id": tenant_id,
         }
         # Copy old (obsolete) config parameters
-        for key in ["username", "password"]:
-            if old_config.get(key):
-                new_config[key] = old_config.get(key)
+        try:
+            old_config = config[tenant]
+        except Exception:
+            old_config = None
+        else:
+            for key in ["username", "password"]:
+                if old_config.get(key):
+                    new_config[key] = old_config.get(key)
         config[tenant] = new_config
         with open(credentials, "w") as f:
             config.write(f)
