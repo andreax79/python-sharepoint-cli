@@ -64,3 +64,12 @@
 ### Added
 
 - authenticate command
+
+## 2.1.0
+
+2021-08-10
+
+### Fix
+
+- Fix problem with saving credentials
+- Ensure atomic token refresh
