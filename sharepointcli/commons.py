@@ -16,6 +16,7 @@ __all__ = [
     "RE_SHAREPOINT_COM",
     "ISO_FMT",
     "O365_SCOPES",
+    "TOKEN_REFRESH_MAX_TRIES",
     "ArgumentParserError",
     "ArgumentException",
 ]
@@ -33,6 +34,7 @@ EXIT_PARSER_ERROR = 2
 RE_SHAREPOINT_COM = re.compile("^https://[^\\.]+.sharepoint.com/.*")
 ISO_FMT = "%Y-%m-%dT%H:%M:%S"
 O365_SCOPES = ["basic", "sharepoint_dl"]
+TOKEN_REFRESH_MAX_TRIES = 5
 
 
 class ArgumentParserError(Exception):
