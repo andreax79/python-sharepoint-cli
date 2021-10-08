@@ -75,9 +75,7 @@ class ArgumentParser(argparse.ArgumentParser):
         self.usage = USAGE.format(prog=self.prog)
 
     def exit(self, status: int = 0, message: Optional[str] = None) -> NoReturn:
-        if message:
-            self._print_message(message, self.stderr)
-        raise ArgumentParserError()
+        raise ArgumentParserError(message)
 
     def parse_args(self, args=None, namespace=None):
         args, remaining_args = self.parse_known_args(args, namespace)
@@ -126,8 +124,6 @@ class SPOCli(object):
                 options.command = "help"
             method = getattr(self, "do_" + options.command)
             return method(options.args, options)
-        except ArgumentParserError:
-            return EXIT_PARSER_ERROR
         except ArgumentException:
             return self.usage(options)
         except Exception as ex:
@@ -137,7 +133,10 @@ class SPOCli(object):
             )
             if options and options.verbose:
                 traceback.print_exc(file=self.stderr)
-            return EXIT_FAILURE
+            if isinstance(ex, ArgumentParserError):
+                return EXIT_PARSER_ERROR
+            else:
+                return EXIT_FAILURE
 
     def usage(self, options: argparse.Namespace) -> int:
         " Prints command usage "
