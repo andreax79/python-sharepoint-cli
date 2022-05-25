@@ -19,6 +19,7 @@ from .commons import (
 from .utils import (
     get_credentials_path,
     get_sharepoint_site,
+    get_sharepoint_sites,
     get_folder,
     is_remote,
     split_url,
@@ -41,7 +42,7 @@ To see help text, you can run:
 
 
 def format_help(md: str) -> str:
-    " Render markdown help to text "
+    "Render markdown help to text"
     result = []
     for line in (md or "").split("\n"):
         line = line.strip()
@@ -139,7 +140,7 @@ class SPOCli(object):
                 return EXIT_FAILURE
 
     def usage(self, options: argparse.Namespace) -> int:
-        " Prints command usage "
+        "Prints command usage"
         doc = getattr(self, "do_" + options.command).__doc__
         doc = format_help(doc)
         usage = ""
@@ -419,6 +420,16 @@ Additional help is available on:
             raise ArgumentException()
         url: str = args[0]
         tenant, site_name, path = split_url(url)
+        if not site_name:
+            if path == "/sites":
+                for site in get_sharepoint_sites(tenant, options):
+                    print("                           PRE {}/".format(site.name))
+                return EXIT_SUCCESS
+            elif not path:
+                print("                           PRE sites/")
+                return EXIT_SUCCESS
+            else:
+                return EXIT_FAILURE
         match = False
         site = get_sharepoint_site(tenant, site_name, options)
         try:

@@ -12,7 +12,7 @@ from portalocker.exceptions import LockException
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 from O365 import Account, FileSystemTokenBackend  # type: ignore
-from O365.sharepoint import Site  # type: ignore
+from O365.sharepoint import Sharepoint, Site  # type: ignore
 from O365.drive import Folder, DriveItem  # type: ignore
 from .commons import (
     RE_SHAREPOINT_COM,
@@ -37,6 +37,7 @@ __all__ = [
     "is_remote",
     "is_office365_sharepoint",
     "get_sharepoint_site",
+    "get_sharepoint_sites",
     "get_folder",
     "filter_folder_files",
 ]
@@ -116,7 +117,10 @@ def split_url(url: str) -> Tuple[str, str, str]:
     # url = 'https://tenant.sharepoint.com/sites/site_name/path'
     p = urlparse(url)
     tenant = p.netloc
-    site_name = p.path.split("/")[2]
+    try:
+        site_name = p.path.rstrip("/").split("/")[2]
+    except IndexError:
+        return (tenant, "", p.path.rstrip("/"))
     path = "/".join(p.path.split("/")[3:])
     return (tenant, site_name, path)
 
@@ -130,15 +134,27 @@ def is_office365_sharepoint(url: str) -> bool:
     return bool(RE_SHAREPOINT_COM.match(url))
 
 
-def get_sharepoint_site(tenant: str, site_name: str, options: Optional[argparse.Namespace] = None) -> Site:
-    "Get Sharepoint site"
+def get_sharepoint(tenant: str, options: Optional[argparse.Namespace] = None) -> Sharepoint:
+    "Get Sharepoint instance"
     client_id, client_secret, tenant_id = load_credentials(
         tenant,
         options.client_id if options is not None else None,
         options.client_secret if options is not None else None,
     )
     account = get_account(tenant, client_id, client_secret, tenant_id)
-    return account.sharepoint().get_site(tenant, "/sites/" + site_name)
+    return account.sharepoint()
+
+
+def get_sharepoint_site(tenant: str, site_name: str, options: Optional[argparse.Namespace] = None) -> Site:
+    "Get Sharepoint site"
+    sp = get_sharepoint(tenant, options)
+    return sp.get_site(tenant, "/sites/" + site_name)
+
+
+def get_sharepoint_sites(tenant: str, options: Optional[argparse.Namespace] = None) -> list[Site]:
+    "Get Sharepoint sites"
+    sp = get_sharepoint(tenant, options)
+    return sp.search_site("*")
 
 
 def get_folder(site: Site, path: str) -> Folder:
