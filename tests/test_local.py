@@ -1,18 +1,8 @@
 #!/usr/bin/env python
 
-import os
-import os.path
-import sys
-import shlex
-import hashlib
-import inspect
-import unittest
-import datetime
-import filecmp
-from io import StringIO
-from sharepointcli import main, __version__
+from sharepointcli import __version__
 from sharepointcli.cli import format_help, ArgumentParser
-from commons import Testing
+from . commons import Testing
 
 
 class LocalTesting(Testing):
@@ -79,7 +69,3 @@ Usage
         self._exec('rmdir --dummy a', expected_exit_code=2)
         self._exec('version --dummy', expected_exit_code=2)
         self._exec('help --dummy', expected_exit_code=2)
-
-
-if __name__ == '__main__':
-    unittest.main()

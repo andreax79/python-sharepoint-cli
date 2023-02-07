@@ -2,17 +2,8 @@
 
 import os
 import os.path
-import sys
-import shlex
-import hashlib
-import inspect
-import unittest
-import datetime
 import filecmp
-from io import StringIO
-from sharepointcli import main, __version__
-from sharepointcli.cli import format_help, ArgumentParser
-from commons import Testing
+from . commons import Testing
 
 
 site = os.environ.get('SITE', '').rstrip('/')
@@ -24,7 +15,7 @@ class OnlineTesting(Testing):
         t = self._t()
         self._exec('ls "{}/"'.format(site))
         self._exec('cp ./tests/f1.txt./tests/f1.txt', expected_exit_code=2)
-        self._exec('cp ./tests/f1.txt "{}/"'.format(site, t))
+        self._exec('cp ./tests/f1.txt "{}/"'.format(site))
         self._exec('rm "{}/f1.txt"'.format(site))
         self._exec('cp ./tests/f1.txt "{}/{}1.txt"'.format(site, t))
         self._exec('cp ./tests/f1.txt "{}/{}2.txt"'.format(site, t))
@@ -60,7 +51,3 @@ class OnlineTesting(Testing):
         self._exec('rmdir "{}/{}"'.format(site, t))
         self._exec('rmdir "{}/{}"'.format(site, t), expected_exit_code=1)
         self._exec('rmdir "{}/{}/1"'.format(site, t), expected_exit_code=1)
-
-
-if __name__ == '__main__':
-    unittest.main()

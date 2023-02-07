@@ -41,6 +41,6 @@ setup(
             'spo=sharepointcli.cli:main',
         ],
     },
-    test_suite='nose.collector',
-    tests_require=['nose'],
+    test_suite='tests',
+    tests_require=['pytest'],
 )

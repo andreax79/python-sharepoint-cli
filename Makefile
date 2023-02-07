@@ -50,3 +50,8 @@ clean:
 	-rm -rf build dist
 	-rm -rf *.egg-info
 
+venv:
+	-rm -rf bin lib share
+	python3 -m virtualenv .
+	. bin/activate; pip install -Ur requirements.txt
+	. bin/activate; pip install -Ur requirements-dev.txt
