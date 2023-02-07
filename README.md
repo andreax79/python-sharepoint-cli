@@ -268,6 +268,38 @@ $ expot SITE='https://example.sharepoint.com/sites/example/Shared documents/test
 $ make test
 ```
 
+Register your app for dummies
+-----------------------------
+
+1. Sign in to the [Azure portal](https://portal.azure.com/).
+1. Select Azure Active Directory.
+1. Under Manage, select App registrations > New registration.
+1. Enter a display name for the authentication and click the Register button.
+1. Copy the Application (client) ID and use it as Client Id for the configuration.
+1. Under Manage, select Authentication > Add a platform.
+1. Select Web as platform.
+1. Set Redirect URI to https://login.microsoftonline.com/common/oauth2/nativeclient
+1. Click on the Configure button to complete the platform configuration.
+1. Select Certificates & secrets > Client secrets > New client secret.
+1. Add a description.
+1. Select an expiration for the secret (e.g. 24 months).
+1. Click on the Add button.
+1. Copy the secret's value for use in configuration as Client Secret. **The secret value is never displayed again after you leave this page.**
+
+```console
+$ spo configure
+SharePoint domain (e.g. example.sharepoint.com): <-- your SharePoint domain
+Tenant Id: db3fe96d-1b57-4119-a5fd-bd139021158d <-- automagical
+Client Id: <<-- copy the Application (client) ID 
+Client Secret: <<-- copy Client Secret
+https://login.microsoftonline.com/db3fe96d-1b57-4119-a5fd-bd139021158d/v2.0/authorize?response_type=code&client_id=...
+(open the link in your Browser, and authorize the app)
+Paste the authenticated url here:
+(paste the Browser's URL, i.e. https://login.microsoftonline.com/common/oauth2/nativeclient?code=0...)
+Authentication Flow Completed. Oauth Access Token Stored. You can now use the API.
+Authenticated!
+```
+
 License
 -------
 
